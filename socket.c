@@ -1,5 +1,6 @@
 #include "socket.h"
 #include "crud.h"
+#include "remed.h"
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -104,6 +105,9 @@ int serverInit() {
       buffer[readingReturn] = '\0';
       strcpy(response, crudInterpret(file, buffer));
 
+      if (-1 == checkNearestTrigger(file)) {
+        strcpy(response, "Failure in checking!");
+      }
       send(incomingSock, response, strlen(response), 0);
     }
 
