@@ -5,9 +5,9 @@ APPS = reme remed
 all: reme remed
 	pkill remed || true
 
-remed: remed.o socket.o daemonize.o crud.o
+remed: remed.o socket.o daemonize.o crud.o sleeper.o
 
-reme: reme.o crud.o daemonize.o socket.o
+reme: reme.o crud.o daemonize.o socket.o sleeper.o
 	$(CC) $(CFLAGS) -o $@ $^
 
 %.o : %.c

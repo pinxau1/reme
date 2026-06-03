@@ -1,6 +1,6 @@
 #include "socket.h"
 #include "crud.h"
-#include "remed.h"
+#include "sleeper.h"
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -51,6 +51,7 @@ close_client:
 }
 
 int serverInit() {
+
   int ret = 0;
   int serverSock = socket(AF_UNIX, SOCK_STREAM, 0);
   int incomingSock;
@@ -59,7 +60,6 @@ int serverInit() {
   int bufCount = 256;
   char buffer[bufCount];
   FILE *file = fopen("reminders.txt", "r+");
-
   if (NULL == file) {
     file = fopen("reminders.txt", "w");
     if (NULL == file) {
@@ -88,6 +88,7 @@ int serverInit() {
   }
 
   while (1) {
+    puts("lacnelaushfa");
     if ((incomingSock =
              accept(serverSock, (struct sockaddr *)&address, &addrlen)) == -1) {
       return 1;
@@ -105,9 +106,10 @@ int serverInit() {
       buffer[readingReturn] = '\0';
       strcpy(response, crudInterpret(file, buffer));
 
-      if (-1 == checkNearestTrigger(file)) {
-        strcpy(response, "Failure in checking!");
+      if(-1 == threadCreate(file)){
+        strcpy(response, "Failed to Apply Reminder");
       }
+      
       send(incomingSock, response, strlen(response), 0);
     }
 
