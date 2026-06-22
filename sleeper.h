@@ -1,7 +1,11 @@
 #ifndef SLEEPER
 #define SLEEPER
 
+#include <stdio.h>
 
-int threadCreate(FILE *file);
+int schedulerStart(FILE *file);
+void schedulerChanged();
+void reminderLock();
+void reminderUnlock();
 
 #endif

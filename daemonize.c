@@ -9,12 +9,7 @@ int daemonize() {
   int pid = fork();
 
   if (pid > 0) {
-    // parent
-    _exit(1);
-  }
-
-  if (pid == 0) {
-    // child
+    _exit(0);
   }
 
   if (pid == -1) {

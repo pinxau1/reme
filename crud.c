@@ -1,90 +1,132 @@
 #include "crud.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-char *softDelete(FILE *file, char *targetIdx) {
-  int goalIdx = atoi(targetIdx), ctr = 1;
-  char buf[256];
+int parseReminderLine(const char *line, struct Reminder *reminder) {
+  char state;
+  int hour, min, mon, day, year;
 
-  if (goalIdx <= 0) {
-    return "Invalid Index";
-  }
-  rewind(file);
-  while (ctr < goalIdx) {
-
-    if (NULL == fgets(buf, sizeof(buf), file)) {
-      return "Invalid Index";
-    }
-
-    if (buf[0] == 'a')
-      ctr++;
+  if (7 != sscanf(line, "%c|%255[^|]|%d:%d|%d/%d/%d", &state,
+                  reminder->message, &hour, &min, &mon, &day, &year)) {
+    return -1;
   }
 
-  fputc('d', file);
-  return "Deleted Successfully!";
+  reminder->active = state == 'a';
+  reminder->timeInfo = (struct tm){0};
+  reminder->timeInfo.tm_hour = hour;
+  reminder->timeInfo.tm_min = min;
+  reminder->timeInfo.tm_mon = mon - 1;
+  reminder->timeInfo.tm_mday = day;
+  reminder->timeInfo.tm_year = year - 1900;
+  reminder->timeInfo.tm_isdst = -1;
+
+  return 0;
 }
 
-char *listProtocol(FILE *file, const char *string) {
-  rewind(file);
-  char holder[256], *response = NULL, temp[300];
-  int i = 1;
+int printReminderLine(FILE *file, const struct Reminder *reminder) {
+  char state = reminder->active ? 'a' : 'd';
 
-  while (fgets(holder, sizeof(holder), file) != NULL) {
-    if (strstr(holder, string)) {
-      if (holder[0] == 'd') {
-        continue;
-      }
-      char toShow[256];
-      if (NULL == response) {
-        response = malloc(1024);
-      }
-      sscanf(holder, "%*[^|]|%*[^|]|%255[^\n]", toShow);
-      snprintf(temp, sizeof(temp), "%d -> %s\n", i++, toShow);
-      strcat(response, temp);
-    }
-  }
-
-  if (NULL == response)
-    return "Pattern not Found";
-  return response;
+  return fprintf(file, "%c|%s|%02d:%02d|%d/%d/%d\n", state,
+                 reminder->message, reminder->timeInfo.tm_hour,
+                 reminder->timeInfo.tm_min, reminder->timeInfo.tm_mon + 1,
+                 reminder->timeInfo.tm_mday, reminder->timeInfo.tm_year + 1900);
 }
 
-const char *crudInterpret(FILE *file, const char *buffer) {
+static void responseSet(struct Response *response, int status,
+                        const char *text) {
+  response->status = status;
+  snprintf(response->text, sizeof(response->text), "%s", text);
+}
 
-  int op;
-  sscanf(buffer, "%d", &op);
-  printf("%d\n", op);
-  switch (op) {
-  case ADD: {
-    char reminder[256], time[10], date[10];
-    if (4 !=
-        sscanf(buffer, "%d|%255[^|]|%[^|]|%s", &op, reminder, time, date)) {
-      return "Lacking arguments!";
+static void softDelete(FILE *file, int targetIdx, struct Response *response) {
+  int idx = 1;
+  char line[LEN + 64];
+  long pos;
+
+  if (targetIdx <= 0) {
+    responseSet(response, 1, "Invalid Index");
+    return;
+  }
+
+  rewind(file);
+  while ((pos = ftell(file)) != -1 && fgets(line, sizeof(line), file)) {
+    struct Reminder reminder;
+
+    if (-1 == parseReminderLine(line, &reminder)) {
+      continue;
     }
-    if (-1 == fprintf(file, "a|%s\n", buffer)) {
-      return "Failed to print but interpreted";
+    if (!reminder.active) {
+      continue;
+    }
+    if (idx == targetIdx) {
+      fseek(file, pos, SEEK_SET);
+      fputc('d', file);
+      fflush(file);
+      responseSet(response, 0, "Deleted Successfully!");
+      return;
+    }
+    idx++;
+  }
+
+  responseSet(response, 1, "Invalid Index");
+}
+
+static void listProtocol(FILE *file, const char *query,
+                         struct Response *response) {
+  char line[LEN + 64];
+  char temp[LEN + 128];
+  int idx = 1;
+
+  response->text[0] = '\0';
+  rewind(file);
+  while (fgets(line, sizeof(line), file)) {
+    struct Reminder reminder;
+
+    if (-1 == parseReminderLine(line, &reminder)) {
+      continue;
+    }
+    if (!reminder.active || NULL == strstr(reminder.message, query)) {
+      continue;
+    }
+
+    snprintf(temp, sizeof(temp), "%d -> %s|%02d:%02d|%d/%d/%d\n", idx++,
+             reminder.message, reminder.timeInfo.tm_hour,
+             reminder.timeInfo.tm_min, reminder.timeInfo.tm_mon + 1,
+             reminder.timeInfo.tm_mday, reminder.timeInfo.tm_year + 1900);
+    strncat(response->text, temp,
+            sizeof(response->text) - strlen(response->text) - 1);
+  }
+
+  if (response->text[0] == '\0') {
+    responseSet(response, 1, "Pattern not Found");
+    return;
+  }
+
+  response->status = 0;
+}
+
+void crudInterpret(FILE *file, const struct Request *request,
+                   struct Response *response) {
+  switch (request->op) {
+  case ADD:
+    if (-1 == printReminderLine(file, &request->reminder)) {
+      responseSet(response, 1, "Failed to print but interpreted");
+      return;
     }
     fflush(file);
-    return "Reminder added\n";
-  }
-  case LIST: {
-    char target[256];
-    if (1 != sscanf(buffer, "%*[^|]|%s", target)) {
-      return "Lacking Arguments";
-    }
-    return listProtocol(file, target);
-  }
+    responseSet(response, 0, "Reminder added\n");
+    return;
+  case LIST:
+    listProtocol(file, request->query, response);
+    return;
   case UPDATE:
-    return "Reminder updated\n";
-  case DELETE: {
-    char target[256];
-    if (1 != sscanf(buffer, "%*[^|]|%s", target)) {
-      return "Lacking Arguments";
-    };
-    return softDelete(file, target);
-  }
+    responseSet(response, 1, "Reminder updated\n");
+    return;
+  case DELETE:
+    softDelete(file, request->index, response);
+    return;
   default:
-    return "Failed to Interpret\n";
+    responseSet(response, 1, "Failed to Interpret\n");
+    return;
   }
 }

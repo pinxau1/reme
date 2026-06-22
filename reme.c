@@ -2,74 +2,152 @@
 #include "socket.h"
 #include <stdbool.h>
 #include <stdio.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+#include <stdlib.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 
-#define LEN 256
+bool isMeridiem = false;
 
-// goal: simple CRUD. create time, read time, update time, delete time.
-
-// important notes:
-// struct tm expects a year that is { year - 1900}
-// struct tm month expects a month that is { month - 1 }
-
-bool isMeridiem = false; // A true meridiem would mean using the am pm format
-
-struct reminder {
-  char messageOfReminder[LEN];
-  struct tm timeInfo;
-};
-
-struct tm *currentTime() {
-  struct tm *current;
+struct tm currentTime() {
   time_t now = time(NULL);
-  current = localtime(&now);
+  struct tm *current = localtime(&now);
 
-  return current;
+  return *current;
+}
+
+int parseTime(const char *time, struct tm *timeInfo) {
+  int hour, min;
+  int used = 0;
+  char meridiem[3] = {0};
+
+  if (isMeridiem) {
+    if (3 != sscanf(time, "%d:%d%2s%n", &hour, &min, meridiem, &used) ||
+        time[used] != '\0') {
+      printf("Wrong format! Refer to reme -h\n");
+      return -1;
+    }
+    if (0 != strcasecmp(meridiem, "am") && 0 != strcasecmp(meridiem, "pm")) {
+      printf("Wrong format! Refer to reme -h\n");
+      return -1;
+    }
+    if (hour < 1 || hour > 12 || min < 0 || min > 59) {
+      printf("Wrong format! Refer to reme -h\n");
+      return -1;
+    }
+    if (0 == strcasecmp(meridiem, "am") && hour == 12) {
+      hour = 0;
+    } else if (0 == strcasecmp(meridiem, "pm") && hour != 12) {
+      hour += 12;
+    }
+  } else if (2 != sscanf(time, "%d:%d%n", &hour, &min, &used) ||
+             time[used] != '\0') {
+    printf("Wrong format! Refer to reme -h\n");
+    return -1;
+  } else if (hour < 0 || hour > 23 || min < 0 || min > 59) {
+    printf("Wrong format! Refer to reme -h\n");
+    return -1;
+  }
+
+  timeInfo->tm_hour = hour;
+  timeInfo->tm_min = min;
+  timeInfo->tm_sec = 0;
+  timeInfo->tm_isdst = -1;
+
+  return 0;
+}
+
+int parseDate(const char *date, struct tm *timeInfo) {
+  int mon, day, year;
+  int used = 0;
+
+  if (3 != sscanf(date, "%d/%d/%d%n", &mon, &day, &year, &used) ||
+      date[used] != '\0') {
+    printf("Wrong format! Refer to reme -h\n");
+    return -1;
+  }
+  if (mon < 1 || mon > 12 || day < 1 || day > 31 || year < 1900) {
+    printf("Wrong format! Refer to reme -h\n");
+    return -1;
+  }
+
+  timeInfo->tm_mon = mon - 1;
+  timeInfo->tm_mday = day;
+  timeInfo->tm_year = year - 1900;
+
+  return 0;
+}
+
+int validateReminderTime(struct tm *timeInfo) {
+  struct tm normalized = *timeInfo;
+  time_t reminderTime = mktime(&normalized);
+  time_t now = time(NULL);
+
+  if (reminderTime == -1 || normalized.tm_year != timeInfo->tm_year ||
+      normalized.tm_mon != timeInfo->tm_mon ||
+      normalized.tm_mday != timeInfo->tm_mday ||
+      normalized.tm_hour != timeInfo->tm_hour ||
+      normalized.tm_min != timeInfo->tm_min) {
+    printf("Wrong format! Refer to reme -h\n");
+    return -1;
+  }
+  if (reminderTime < now) {
+    printf("Time is in the past!\n");
+    return -1;
+  }
+
+  *timeInfo = normalized;
+  return 0;
 }
 
 int sendDelete(const char *toDelNum) {
-  char buf[LEN];
-  int chk = snprintf(buf, sizeof(buf), "%d|%s", DELETE, toDelNum);
-  if (chk < 0 || chk > LEN) {
-    perror("snprintf");
-    return -1;
-  }
+  struct Request request = {0};
 
-  sockSend(buf);
-  return 0;
+  request.op = DELETE;
+  request.index = atoi(toDelNum);
+
+  return sockSend(&request);
 }
-int sendList(const char *reminderToDelete) {
-  char buf[LEN];
-  int chk = snprintf(buf, sizeof(buf), "%d|%s", LIST, reminderToDelete);
-  if (chk < 0 || chk > LEN) {
-    perror("snprintf");
-    return -1;
-  }
 
-  sockSend(buf);
-  return 0;
+int sendList(const char *reminderToDelete) {
+  struct Request request = {0};
+
+  request.op = LIST;
+  snprintf(request.query, sizeof(request.query), "%s", reminderToDelete);
+
+  return sockSend(&request);
 }
 
 int sendEdit() { return 0; }
 
-int sendAppend(char *reminder, const char *time, char *date) {
-  // look here
-  char buf[LEN];
-  if (date == NULL) {
-    date = "null";
+int exitCode(int ret) {
+  if (ret < 0) {
+    return 1;
   }
-  int chk =
-      snprintf(buf, sizeof(buf), "%d|%s|%s|%s", ADD, reminder, time, date);
-  if (chk < 0 || chk > LEN) {
-    perror("snprintf");
+
+  return ret;
+}
+
+int sendAppend(char *message, const char *time, char *date) {
+  struct Request request = {0};
+
+  request.op = ADD;
+  request.reminder.active = 1;
+  request.reminder.timeInfo = currentTime();
+  snprintf(request.reminder.message, sizeof(request.reminder.message), "%s",
+           message);
+
+  if (-1 == parseTime(time, &request.reminder.timeInfo)) {
     return -1;
   }
-  printf("%s\n", buf);
-  sockSend(buf);
-  return 0;
+  if (date != NULL && -1 == parseDate(date, &request.reminder.timeInfo)) {
+    return -1;
+  }
+  if (-1 == validateReminderTime(&request.reminder.timeInfo)) {
+    return -1;
+  }
+
+  return sockSend(&request);
 }
 
 int main(int argc, char *argv[]) {
@@ -78,36 +156,27 @@ int main(int argc, char *argv[]) {
   while ((check = getopt(argc, argv, "ldeath")) != -1) {
     switch (check) {
     case 'l':
-      if (argc - optind < 1) {
-        fputs("USAGE: reme -l \"REMINDER\"\n", stdout);
-        fputs("-h for help\n", stdout);
-        return 1;
-      }
-      sendList(argv[optind]);
-      // format reme -d "remi"
-      // shows list
-      // respond with number
-      return 0;
+      return sendList(argc - optind < 1 ? "" : argv[optind]);
     case 'd':
       if (argc - optind < 1) {
         fputs("USAGE: reme -d \"REMINDER\"\n", stdout);
         fputs("-h for help\n", stdout);
         return 1;
       }
-      sendDelete(argv[optind]);
-      return 0;
+      return sendDelete(argv[optind]);
     case 'e':
       sendEdit();
       return 0;
     case 't':
       isMeridiem = true;
-      return 0;
+      break;
     case 'h':
       fputs("\nreme [option] \"REMINDER\" TIME DATE\n\n", stdout);
       fputs("REMINDER\treminder message\n", stdout);
       fputs("TIME\t\tHH:MM format\n", stdout);
+      fputs("-t TIME\t\tHH:MMAM or HH:MMPM format\n", stdout);
       fputs("DATE\t\tMM/DD/YYYY format\n", stdout);
-      fputs("-t\t\tchange format to AM / PM\n", stdout);
+      fputs("-l [REMINDER]\tlist reminders, optionally filtered by message\n", stdout);
       fputs("-d\t\tdelete a reminder\n", stdout);
       fputs("-e\t\tedit a reminder\n", stdout);
       return 0;
@@ -121,9 +190,9 @@ int main(int argc, char *argv[]) {
   }
 
   if (argc - optind == 2) {
-    sendAppend(argv[optind], argv[optind + 1], NULL);
+    return exitCode(sendAppend(argv[optind], argv[optind + 1], NULL));
   } else if (argc - optind == 3) {
-    sendAppend(argv[optind], argv[optind + 1], argv[optind + 2]);
+    return exitCode(sendAppend(argv[optind], argv[optind + 1], argv[optind + 2]));
   }
 
   return 0;
