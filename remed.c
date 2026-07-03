@@ -2,14 +2,17 @@
 #include "daemonize.h"
 #include "sleeper.h"
 #include "socket.h"
-#include <stdbool.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <sys/file.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #define PATH "/tmp/reme.sock"
@@ -36,18 +39,68 @@ int singleInstanceLock() {
   return fd;
 }
 
+int reminder_path_init(char *path_name, size_t size) {
+  const char *home = getenv("HOME");
+  int ret;
+
+  if (home == NULL) {
+    fputs("HOME is not set\n", stderr);
+    return -1;
+  }
+
+  ret = snprintf(path_name, size, "%s/.local/share/reme/reminders.txt", home);
+  if (ret < 0 || (size_t)ret >= size) {
+    fputs("reminder path is too long\n", stderr);
+    return -1;
+  }
+
+  return 0;
+}
+
+int directory_store_init(char *path) {
+  char directory[255];
+  char *truncate_location;
+
+  if (strlen(path) >= sizeof(directory)) {
+    fputs("reminder directory path is too long\n", stderr);
+    return -1;
+  }
+
+  strcpy(directory, path);
+  truncate_location = strrchr(directory, '/');
+  if (truncate_location == NULL) {
+    fputs("invalid reminder path\n", stderr);
+    return -1;
+  }
+  *truncate_location = '\0';
+
+  if (mkdir(directory, 0700) == -1 && errno != EEXIST) {
+    perror("mkdir");
+    return -1;
+  }
+
+  return 0;
+}
+
 int serverInit() {
   int ret = 0;
   int serverSock = socket(AF_UNIX, SOCK_STREAM, 0);
   int incomingSock;
   struct sockaddr_un address = {0};
   socklen_t addrlen = sizeof(address);
-  FILE *file = fopen("reminders.txt", "r+");
+  char fileName[255];
+  if (-1 == reminder_path_init(fileName, sizeof(fileName))) {
+    return -1;
+  }
+  if (-1 == directory_store_init(fileName)) {
+    return -1;
+  }
+  FILE *file = fopen(fileName, "r+");
 
   if (NULL == file) {
-    file = fopen("reminders.txt", "w+");
+    file = fopen(fileName, "w+");
     if (NULL == file) {
-      perror("reminders.txt");
+      perror("fopen reminders");
       return -1;
     }
   }
