@@ -167,23 +167,23 @@ close_server:
 }
 
 int main(int argc, char *argv[]) {
-  bool verbose = false;
+  bool is_daemonize = false;
   int check;
 
   opterr = 0;
-  while ((check = getopt(argc, argv, "v")) != -1) {
+  while ((check = getopt(argc, argv, "d")) != -1) {
     switch (check) {
-    case 'v':
-      verbose = true;
+    case 'd':
+      is_daemonize = true;
       break;
     default:
-      fputs("USAGE: remed [-v]\n", stdout);
+      fputs("USAGE: remed [-d]\n", stdout);
       return 1;
     }
   }
 
   if (optind != argc) {
-    fputs("USAGE: remed [-v]\n", stdout);
+    fputs("USAGE: remed [-d]\n", stdout);
     return 1;
   }
 
@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!verbose && -1 == daemonize()) {
+  if (is_daemonize && -1 == daemonize()) {
     return 1;
   }
 

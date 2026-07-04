@@ -1,0 +1,10 @@
+[Unit]
+Description=reme daemon
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/remed
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

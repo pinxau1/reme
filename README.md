@@ -1,108 +1,73 @@
 # reme
 
-`reme` is a small reminder tool written in C. It has a command line client and
-a background daemon.
+This is a small reminder tool written in C. Its structure is mainly client and server (daemon).
 
-The client is `reme`. It sends reminder requests to the daemon.
-
-The daemon is `remed`. It stores reminders, waits for them to become due, and
-sends desktop notifications.
+| reme                                                              | remed                                          |
+| ----------------------------------------------------------------- | ---------------------------------------------- |
+| This is the binary that sends your reminder prompt to the server. | This is the server that listens to the client. |
 
 ## Requirements
 
-- A Linux or Unix-like system
-- `gcc`
-- `make`
+- Linux or UNIX-like system
+- gcc
+- make
 - POSIX threads
-- `notify-send`
-- Mako or another desktop notification daemon
+- notify-send
+- systemd
+- any notification daemon
 
-## Build
+## Installation
 
-Run `make` from the project directory.
+Clone the repository:
 
-This builds two programs:
-
-- `reme`
-- `remed`
-
-## Running
-
-Start `remed` before using `reme`.
-
-By default, `remed` runs as a daemon. Use verbose mode when you want it to stay
-attached to the terminal.
-
-The client talks to the daemon through this Unix socket:
-
-```text
-/tmp/reme.sock
+```bash
+git clone https://github.com/pinxau1/reme.git
+cd reme
 ```
 
-If the daemon is not running, the client cannot add, list, or delete reminders.
+Inside the directory:
 
-## Commands
-
-`reme` can add a reminder with a message, time, and optional date.
-
-Times use 24-hour format by default:
-
-```text
-HH:MM
+```bash
+make install
 ```
 
-Dates use this format:
+This installs the binaries and sets up the systemd user service.
+To start using do the this:
 
-```text
-MM/DD/YYYY
+```bash
+make enable
 ```
 
-The `-t` flag enables 12-hour time input with `AM` or `PM`.
+To uninstall:
 
-The `-l` flag lists active reminders. It can also filter reminders by message
-text.
+```bash
+make uninstall
+```
 
-The `-d` flag deletes an active reminder by its list number.
+To disable
 
-The `-h` flag prints the built-in help text.
+```bash
+make disable
+```
 
-The `-e` flag exists in the client, but edit support is not implemented yet.
+## Usage
+
+Flags and examples:
+
+| Flag | Example                       | Description                                                                                       |
+| ---- | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| -t   | reme -t "take a bath" 11:00am | Adds a reminder that triggers on 11:00am. Removing -t flag allows non-meridiem format (no AM/PM). |
+| -l   | reme -l                       | Shows a list of reminders yet to be triggered. (Use prior to deletion).                           |
+| -d   | reme -d 1                     | Deletes number 1 in the `reme -l` list.                                                           |
+| -h   | reme -h                       | Shows help to remind you of the usage.                                                            |
 
 ## Notifications
 
-When a reminder is due, `remed` prints the reminder message and calls
-`notify-send`.
+When a reminder is triggered, it sends through `notify-send`. You can customize the appearance of a `reme` notification. The specified app-name is "reme".
 
-The notification app name is `reme`, and the notification title is `Reme`.
-
-For Mako, this rule centers `reme` notifications:
+Example for mako notification:
 
 ```ini
 [app-name="reme"]
 anchor=center
 ```
-
-## Storage
-
-Reminders are stored in `reminders.txt` in the directory where `remed` is run.
-
-Each line uses this format:
-
-```text
-state|message|HH:MM|MM/DD/YYYY
-```
-
-The state is `a` for active or `d` for inactive.
-
-Deleted reminders are marked inactive. Fired reminders are also marked inactive.
-They stay in the file instead of being removed.
-
-## Notes
-
-`reme` rejects reminders in the past.
-
-Invalid dates and times are rejected before they are sent to the daemon.
-
-The daemon removes any old `/tmp/reme.sock` file when it starts.
-
-Notification delivery depends on the desktop session and notification daemon.
