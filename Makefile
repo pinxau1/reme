@@ -8,6 +8,7 @@ APPS = reme remed
 install: all
 	mkdir -p $(PREFIX)/bin
 	cp remed $(PREFIX)/bin/remed
+	cp reme $(PREFIX)/bin/reme
 	cp remed.service $(SYSTEMD_DIR)/remed.service
 	systemctl --user daemon-reload
 
