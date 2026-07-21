@@ -39,7 +39,7 @@ static void notifySend(const char *message) {
     }
 
     if (notifyPid == 0) {
-      execlp("notify-send", "notify-send", "-a", "reme", "Reme", message,
+      execlp("notify-send", "notify-send", "-a", "reme", "-t", "0", "Reme", message,
              NULL);
       perror("execlp");
       _exit(1);
